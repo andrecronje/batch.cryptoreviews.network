@@ -20,10 +20,14 @@ import HelpOutlineIcon from 'material-ui-icons/HelpOutline';
 import HelpIcon from 'material-ui-icons/HelpOutline';
 import IconButton from 'material-ui/IconButton';
 import Tooltip from 'material-ui/Tooltip';
+
+const csv = require("fast-csv");
 const aes256 = require('aes256');
 const bip39 = require('bip39');
 const axios = require('axios');
 const sha256 = require('sha256');
+const isEthereumAddress  = require('is-ethereum-address');
+const bigInt = require("big-integer");
 
 const instance = axios.create({
   baseURL: 'https://api.cryptoreviews.network/api/v1/',
@@ -112,6 +116,10 @@ class App extends Component {
       [name]: event.target.value,
     });
   };
+  handleData = data => {
+    console.log(data)
+    this.setState({ data })
+  };
   handleChecked = name => event => {
     this.setState({ [name]: event.target.checked });
   };
@@ -187,7 +195,68 @@ class App extends Component {
       that.setState({loading:false,loaded:true,errored:true,err:error})
     });
   };
+  onChange = event => {
+    const file = event.target.files[0]
+    const reader = new FileReader()
+    var that = this
+    reader.readAsText(file)
+    reader.onload = () => {
+      let result = reader.result
+      var dataSet = []
+      var invalidDataSet = []
+      var validAddresses = 0;
+      var invalidAddresses = 0;
+      var totalERC20 = bigInt(0)
+      var min = bigInt(1e100)
+      var max = min.multiply(-1)
+      csv.fromString(result)
+      .on("data", function(data) {
+        if (isEthereumAddress(data[0])) {
+          var value = 0
+          try {
+            value = bigInt(data[1])
+          } catch (err) {
+            console.log(err)
+          }
+          if (value <= 0) {
+            invalidDataSet.push(data)
+            invalidAddresses++
+          } else {
+            dataSet.push(data)
+            validAddresses++
+            totalERC20 = totalERC20.add(value)
+            if (min.greater(value)) {
+              min = bigInt(value)
+            }
+            if (max.lesser(value)) {
+              max = bigInt(value)
+            }
+          }
+
+        } else {
+          invalidDataSet.push(data)
+          invalidAddresses++
+        }
+      })
+      .on("end", function() {
+        console.log({dataSet})
+        that.setState({dataSet})
+        that.setState({invalidDataSet})
+        that.setState({totalERC20:totalERC20.value})
+        that.setState({validAddresses})
+        that.setState({invalidAddresses})
+        console.log(invalidDataSet)
+        console.log(min.value)
+        console.log(max.value)
+        console.log(validAddresses)
+      })
+    }
+  }
   renderPage() {
+    const keys = [
+      "address",
+      "amount"
+    ]
     switch (this.state.page) {
       case 'NewWallet':
       break;
@@ -236,26 +305,59 @@ class App extends Component {
       break;
       case 'Home':
       default:
-       return (<Card raised elevation={10} square={false} fullWidth={true}>
-         <CardContent>
-           <Grid container xs={12} direction="row" justify="center" alignItems="flex-start" spacing={16}>
-             <Grid container xs={6}>
-               <Grid item xs={12}><Typography align='center' variant="headline" component="h2">New Wallet</Typography></Grid>
-               <Button size="large" fullWidth={true} onClick={this.newWallet}>New Wallet</Button>
-             </Grid>
-             <Grid container xs={6}>
-               <Grid item xs={12}><Typography align='center' variant="headline" component="h2">Import Wallet</Typography></Grid>
-               <TextField id="mnemonic" fullWidth={true} label="Mnemonic" value={this.state.mnemonic} onChange={this.handleChange('mnemonic')} margin="normal"/>
-               <Grid item xs={12}><Typography align='center'>or</Typography></Grid>
-               <TextField id="privateKey" fullWidth={true} label="Private Key" value={this.state.privateKey} onChange={this.handleChange('privateKey')} margin="normal"/>
-               <Grid item xs={12}><Typography align='center'>or</Typography></Grid>
-               <TextField id="keystore" fullWidth={true} label="Keystore" value={this.state.keystore} onChange={this.handleChange('keystore')} margin="normal"/>
-               <TextField id="password" fullWidth={true} label="Keystore Password" value={this.state.password} onChange={this.handleChange('password')} margin="normal"/>
-               <Button size="large" fullWidth={true} onClick={this.importWallet}>Import Wallet</Button>
-             </Grid>
-           </Grid>
-         </CardContent>
-       </Card>)
+       return (
+            <Card raised elevation={10} square={false} fullWidth={true}>
+              <CardContent>
+                <Grid container xs={12} direction="row" justify="center" alignItems="flex-start" spacing={16}>
+                  <Grid container xs={12} direction="row" justify="center" alignItems="flex-start" spacing={16}>
+                    <Grid item xs={12} justify="center"><input type="file" onChange={this.onChange} /></Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>Valid Rows:</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>{this.state.validAddresses}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>Invalid Rows:</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>{this.state.invalidAddresses}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>ETH fees:</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>{this.state.fees}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>ERC20 total:</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography align='center'>{this.state.totalERC20}</Typography>
+                    </Grid>
+                  </Grid>
+                  <Grid container xs={6}>
+                    <Grid item xs={12}>
+                      <Typography align='center' variant="headline" component="h2">New Wallet</Typography>
+                      <Button size="large" fullWidth={true} onClick={this.newWallet}>New Wallet</Button>
+                    </Grid>
+                  </Grid>
+                  <Grid container xs={6}>
+                    <Grid item xs={12}>
+                      <Typography align='center' variant="headline" component="h2">Import Wallet</Typography>
+                      <TextField id="mnemonic" fullWidth={true} label="Mnemonic" value={this.state.mnemonic} onChange={this.handleChange('mnemonic')} margin="normal"/>
+                      <Typography align='center'>or</Typography>
+                      <TextField id="privateKey" fullWidth={true} label="Private Key" value={this.state.privateKey} onChange={this.handleChange('privateKey')} margin="normal"/>
+                      <Typography align='center'>or</Typography>
+                      <TextField id="keystore" fullWidth={true} label="Keystore" value={this.state.keystore} onChange={this.handleChange('keystore')} margin="normal"/>
+                      <TextField id="password" fullWidth={true} label="Keystore Password" value={this.state.password} onChange={this.handleChange('password')} margin="normal"/>
+                      <Button size="large" fullWidth={true} onClick={this.importWallet}>Import Wallet</Button>
+                    </Grid>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+     )
       break;
     }
   };
